@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pydantic
+pandas
+pdfplumber
+pymupdf
+PyPDF2
+ollama
+openpyxl
+xlsxwriter
+python-multipart
+ocrmypdf
