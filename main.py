@@ -1884,7 +1884,7 @@
 #################################
 
 # backend/main.py
-
+from urllib.parse import quote
 import io
 import os
 import re
@@ -3199,12 +3199,27 @@ async def export_xlsx(payload: ExportRequest):
 
     output.seek(0)
 
-    safe_name = re.sub(r"[^\w\-]+", "_", payload.fileName.replace(".pdf", ""))
-    filename = f"{safe_name}_compliance.xlsx"
+    base = payload.fileName
+    base = re.sub(r"\.pdf$", "", base, flags=re.IGNORECASE)
+    base = re.sub(r"\s+", "_", base).strip()
+
+# ASCII-only fallback for headers (prevents Latin-1 encoding errors)
+    ascii_base = re.sub(r"[^A-Za-z0-9_-]+", "_", base).strip("_")
+    if not ascii_base:
+        ascii_base = "compliance"
+
+    ascii_filename = f"{ascii_base}_compliance.xlsx"
+
+# Optional: preserve the original (possibly Arabic) name via RFC 5987
+    utf8_filename = f"{base}_compliance.xlsx"
+    utf8_quoted = quote(utf8_filename)
 
     headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"'
-    }
+    "Content-Disposition": (
+        f'attachment; filename="{ascii_filename}"; '
+        f"filename*=UTF-8''{utf8_quoted}"
+    )
+}
 
     return StreamingResponse(
         output,
