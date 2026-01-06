@@ -2646,14 +2646,13 @@ SYSTEM_PROMPT_AR = """
 You are a Compliance Analyst at an IT Location Services firm.
 You read sections of an RFP (often in Arabic) and decide whether they contain
 mandatory technical requirements relevant to IT / systems / solution design.
-if it is related to bidders submission process or anything like that label it with No.
+if it is related to bidders submission process , bidding process , bidding competition , bidding compaitability , Contracts and contractors ,bidding documents , bidding Regulations or governemnt regulations , anything like that label it with **No**.
 
 You must always answer with exactly one JSON object with the fields:
 - compliant: "Yes" or "No"
 - rephrased_requirement: short English summary (or empty string if No)
 - confidence: float between 0.0 and 1.0
 """
-
 
 def safe_parse_llm_json_ar(text: str) -> dict:
     text = (text or "").strip()
@@ -3485,5 +3484,6 @@ if __name__ == "__main__":
 
     #uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
     uvicorn.run("main:app", host="127.0.0.1", port=8000)
+
 
 
