@@ -2790,7 +2790,7 @@ class HierarchicalRowOut(BaseModel):
 
 class RunResponse(BaseModel):
     language: str  # "english" | "arabic"
-    #rows: List[ComplianceRowOut]          # already hierarchical
+    rows: List[ComplianceRowOut]          # already hierarchical
     splitRows: List[HierarchicalRowOut]   # same hierarchy but with level
     pdfFileName: str                      # name of PDF to preview via /api/compliance/pdf/{pdfFileName}
 
@@ -3256,25 +3256,25 @@ async def run_compliance(file: UploadFile = File(...)):
     hierarchical_rows: List[HierarchicalRowOut] = build_hierarchical_rows_for_frontend(export_rows)
 
     # Build ComplianceRowOut from hierarchical rows
-    # rows_out: List[ComplianceRowOut] = []
-    # for hr in hierarchical_rows:
-    #     rephrased = rephrased_by_req_id.get(hr.requirementId, "")
-    #     rows_out.append(
-    #         ComplianceRowOut(
-    #             id=f"{hr.requirementId}_{hr.outlineNumber}",
-    #             chunkId=hr.chunkId,
-    #             outlineNumber=hr.outlineNumber,
-    #             text=hr.text,
-    #             rephrasedRequirement=rephrased,
-    #             compliant=hr.compliant,
-    #             mandatoryOptional=hr.mandatoryOptional or "",
-    #             confidence=hr.confidence or 0.0,
-    #         )
-    #     )
+    rows_out: List[ComplianceRowOut] = []
+    for hr in hierarchical_rows:
+        rephrased = rephrased_by_req_id.get(hr.requirementId, "")
+        rows_out.append(
+            ComplianceRowOut(
+                id=f"{hr.requirementId}_{hr.outlineNumber}",
+                chunkId=hr.chunkId,
+                outlineNumber=hr.outlineNumber,
+                text=hr.text,
+                rephrasedRequirement=rephrased,
+                compliant=hr.compliant,
+                mandatoryOptional=hr.mandatoryOptional or "",
+                confidence=hr.confidence or 0.0,
+            )
+        )
 
     return RunResponse(
         language=language,
-        #rows=rows_out,
+        rows=rows_out,
         splitRows=hierarchical_rows,
         pdfFileName=processed_name,  # frontend uses /api/compliance/pdf/{pdfFileName}
     )
@@ -3484,6 +3484,7 @@ if __name__ == "__main__":
 
     #uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
     uvicorn.run("main:app", host="127.0.0.1", port=8000)
+
 
 
 
