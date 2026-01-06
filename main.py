@@ -1884,6 +1884,11 @@
 #################################
 
 # backend/main.py
+
+#################################
+#################################
+
+# backend/main.py
 from urllib.parse import quote
 import io
 import os
@@ -2424,11 +2429,46 @@ def is_meaningful_generic(text: str, min_words: int = 5) -> bool:
     return letter_count >= min_words
 
 
+AR_NUM_PREFIX_RE = re.compile(r"(?<!\n)\s*-\s*(\d{1,3})\s+")
+AR_NUM_DOT_RE    = re.compile(r"(?<!\n)\s*(\d{1,3})\s*[\.\)]\s+")
+AR_CHAIN_RE      = re.compile(r"(?<!\n)\s*((?:\d+\.)+\d+)\s+")
+AR_SECTION_RE    = re.compile(r"(?<!\n)\s*(\d+\.0)\s*(?:[.)])?\s+")
+
+AR_NUM_PREFIX_RE = re.compile(r"(?<!\n)\s*-\s*(\d{1,3})\s+")
+AR_NUM_DOT_RE    = re.compile(r"(?<!\n)\s*(\d{1,3})\s*[\.\)]\s+")
+AR_CHAIN_RE      = re.compile(r"(?<!\n)\s*((?:\d+\.)+\d+)\s+")
+AR_SECTION_RE    = re.compile(r"(?<!\n)\s*(\d+\.0)\s*(?:[.)])?\s+")
+
+def inject_newlines_for_numbered_lists(text: str) -> str:
+    if not text:
+        return ""
+
+    t = text.replace("\r\n", "\n").replace("\r", "\n")
+    t = re.sub(r"[\u200b-\u200f\ufeff]", "", t)
+    t = re.sub(r"[ \t]{2,}", " ", t)
+
+    # ✅ Only skip if there's NOTHING to fix
+    # (i.e., no "-1", "1)", "4.1.2", etc. patterns appear inline)
+    if not re.search(r"(?:\s-\s*\d{1,3}\s)|(?:\s\d{1,3}[.)]\s)|(?:\s(?:\d+\.)+\d+\s)|(?:\s\d+\.0\s)", t):
+        return t
+
+    # Inject newlines
+    t = AR_NUM_PREFIX_RE.sub(r"\n-\1 ", t)
+    t = AR_NUM_DOT_RE.sub(r"\n\1. ", t)
+    t = AR_CHAIN_RE.sub(r"\n\1 ", t)
+    t = AR_SECTION_RE.sub(r"\n\1 ", t)
+
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+    return t
+
+
+
 def create_chunks_arabic(pdf_path: str) -> List[dict]:
     """
     Arabic-specific chunking using your production logic:
     - process_pdf_arabic (best extractor + reverse fix)
     - clean_text_generic
+    - inject newlines for OCR numbered lists / bullets (fix "one long line")
     - split into paragraphs
     - keep only meaningful ones
     """
@@ -2437,7 +2477,13 @@ def create_chunks_arabic(pdf_path: str) -> List[dict]:
         return []
 
     text = clean_text_generic(text)
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    text = inject_newlines_for_numbered_lists(text)
+
+# ✅ If we now have list items, split by lines that start with "-<num>"
+    if re.search(r"(?m)^\s*-\d+\s+", text):
+        paragraphs = [p.strip() for p in re.split(r"(?m)(?=^\s*-\d+\s+)", text) if p.strip()]
+    else:
+        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
 
     chunks: List[dict] = []
     for para in paragraphs:
@@ -2453,6 +2499,7 @@ def create_chunks_arabic(pdf_path: str) -> List[dict]:
 
     print(f"✅ Created {len(chunks)} meaningful Arabic chunks")
     return chunks
+
 
 
 SYSTEM_PROMPT_AR = """
