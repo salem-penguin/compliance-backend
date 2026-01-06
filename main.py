@@ -2429,47 +2429,175 @@ def is_meaningful_generic(text: str, min_words: int = 5) -> bool:
     return letter_count >= min_words
 
 
-AR_NUM_PREFIX_RE = re.compile(r"(?<!\n)\s*-\s*(\d{1,3})\s+")
-AR_NUM_DOT_RE    = re.compile(r"(?<!\n)\s*(\d{1,3})\s*[\.\)]\s+")
-AR_CHAIN_RE      = re.compile(r"(?<!\n)\s*((?:\d+\.)+\d+)\s+")
-AR_SECTION_RE    = re.compile(r"(?<!\n)\s*(\d+\.0)\s*(?:[.)])?\s+")
+# AR_NUM_PREFIX_RE = re.compile(r"(?<!\n)\s*-\s*(\d{1,3})\s+")
+# AR_NUM_DOT_RE    = re.compile(r"(?<!\n)\s*(\d{1,3})\s*[\.\)]\s+")
+# AR_CHAIN_RE      = re.compile(r"(?<!\n)\s*((?:\d+\.)+\d+)\s+")
+# AR_SECTION_RE    = re.compile(r"(?<!\n)\s*(\d+\.0)\s*(?:[.)])?\s+")
 
-AR_NUM_PREFIX_RE = re.compile(r"(?<!\n)\s*-\s*(\d{1,3})\s+")
-AR_NUM_DOT_RE    = re.compile(r"(?<!\n)\s*(\d{1,3})\s*[\.\)]\s+")
-AR_CHAIN_RE      = re.compile(r"(?<!\n)\s*((?:\d+\.)+\d+)\s+")
-AR_SECTION_RE    = re.compile(r"(?<!\n)\s*(\d+\.0)\s*(?:[.)])?\s+")
+# AR_NUM_PREFIX_RE = re.compile(r"(?<!\n)\s*-\s*(\d{1,3})\s+")
+# AR_NUM_DOT_RE    = re.compile(r"(?<!\n)\s*(\d{1,3})\s*[\.\)]\s+")
+# AR_CHAIN_RE      = re.compile(r"(?<!\n)\s*((?:\d+\.)+\d+)\s+")
+# AR_SECTION_RE    = re.compile(r"(?<!\n)\s*(\d+\.0)\s*(?:[.)])?\s+")
+# # Handles ".1", ".2" style OCR bullets (dot then number)
+# AR_DOTNUM_RE = re.compile(r"(?m)(?<!\n)\s*\.\s*(\d{1,3})\s+")
+# # Also handle Arabic-Indic digits if OCR outputs ١٢٣
+# AR_DOTNUM_ARABIC_INDIC_RE = re.compile(r"(?m)(?<!\n)\s*\.\s*([٠-٩]{1,3})\s+")
+# AR_TOPLEVEL_NUM_RE = re.compile(r"(?m)(?<!\n)\s*(\d{1,2})\s+(?=\S)")
 
+# # 2) OCR bullets like: ".1 ..." ".2 ..."  (also supports Arabic-Indic digits .١ .٢)
+# AR_DOTNUM_RE = re.compile(r"(?m)(?<!\n)\s*\.\s*([0-9]{1,3}|[٠-٩]{1,3})\s+")
+
+# # 3) Arabic letter bullets: "أ-" "ب-" "ج-" ...
+# Hyphen-number bullets: -1, -2 ...
+AR_NUM_PREFIX_RE = re.compile(r"(?m)(?<!\n)\s*-\s*(\d{1,3})\s+")
+
+# Number-dot/paren bullets: 1.  /  1)
+AR_NUM_DOT_RE = re.compile(r"(?m)(?<!\n)\s*(\d{1,3})\s*[\.\)]\s+")
+
+# Chained numbering: 4.1.2 ...
+AR_CHAIN_RE = re.compile(r"(?m)(?<!\n)\s*((?:\d+\.)+\d+)\s+")
+
+# Section-like numbers: 3.0
+AR_SECTION_RE = re.compile(r"(?m)(?<!\n)\s*(\d+\.0)\s*(?:[.)])?\s+")
+
+# OCR dot-number bullets: .1 or .١ or .٢ ...
+AR_DOTNUM_RE = re.compile(r"(?m)(?<!\n)\s*\.\s*([0-9]{1,3}|[٠-٩]{1,3})\s+")
+
+# Arabic letter bullets: أ- ب- ج- ...
+AR_LETTER_BULLET_RE = re.compile(r"(?m)(?<!\n)\s*([أ-ي])\s*-\s+")
+
+
+# def inject_newlines_for_numbered_lists(text: str) -> str:
+#     if not text:
+#         return ""
+
+#     t = text.replace("\r\n", "\n").replace("\r", "\n")
+#     t = re.sub(r"[\u200b-\u200f\ufeff]", "", t)
+#     t = re.sub(r"[ \t]{2,}", " ", t)
+
+#     # Inject newline before "-1"
+#     t = AR_NUM_PREFIX_RE.sub(r"\n-\1 ", t)
+
+#     # Inject newline before "1." / "1)"
+#     t = AR_NUM_DOT_RE.sub(r"\n\1. ", t)
+
+#     # Inject newline before ".1" (OCR bullet style)
+#     t = AR_DOTNUM_RE.sub(r"\n.\1 ", t)
+#     t = AR_DOTNUM_ARABIC_INDIC_RE.sub(r"\n.\1 ", t)
+
+#     # Inject newline before chained numbering "4.1.2"
+#     t = AR_CHAIN_RE.sub(r"\n\1 ", t)
+
+#     # Inject newline before section-like "3.0"
+#     t = AR_SECTION_RE.sub(r"\n\1 ", t)
+
+#     t = re.sub(r"\n{3,}", "\n\n", t).strip()
+#     return t
 def inject_newlines_for_numbered_lists(text: str) -> str:
+    """
+    Normalize OCR-style Arabic chunks that come as one long line by injecting
+    newlines before common list / section markers.
+
+    Handles:
+    - -1 -2 ...
+    - 1. / 1)
+    - .1 / .١ / .٢ ...
+    - 4.1.2 ...
+    - 3.0 ...
+    - top-level headings like: "3 أهلية ..." (guarded to avoid dates like 21/4/1441هـ)
+    - أ- ب- ...
+    """
     if not text:
         return ""
 
     t = text.replace("\r\n", "\n").replace("\r", "\n")
-    t = re.sub(r"[\u200b-\u200f\ufeff]", "", t)
-    t = re.sub(r"[ \t]{2,}", " ", t)
+    t = re.sub(r"[\u200b-\u200f\ufeff]", "", t)   # remove zero-width chars
+    t = re.sub(r"[ \t]{2,}", " ", t).strip()
 
-    # ✅ Only skip if there's NOTHING to fix
-    # (i.e., no "-1", "1)", "4.1.2", etc. patterns appear inline)
-    if not re.search(r"(?:\s-\s*\d{1,3}\s)|(?:\s\d{1,3}[.)]\s)|(?:\s(?:\d+\.)+\d+\s)|(?:\s\d+\.0\s)", t):
-        return t
+    # ------------------------------------------------------------------
+    # 1) Top-level headings: " 3 أهلية ..." (but avoid dates 21/4/1441هـ)
+    # We only split when number is followed by Arabic letters.
+    # ------------------------------------------------------------------
+    t = re.sub(
+        r"(?m)(?<!\n)\s+(\d{1,2})\s+(?=[\u0600-\u06FF])",
+        r"\n\1 ",
+        t,
+    )
 
-    # Inject newlines
+    # ------------------------------------------------------------------
+    # 2) Lists / bullets
+    # ------------------------------------------------------------------
+    # -1, -2, ...
     t = AR_NUM_PREFIX_RE.sub(r"\n-\1 ", t)
+
+    # 1.  or  1)
     t = AR_NUM_DOT_RE.sub(r"\n\1. ", t)
+
+    # .1  or  .١  (OCR)
+    t = AR_DOTNUM_RE.sub(r"\n.\1 ", t)
+
+    # أ- ب- ج- ...
+    t = AR_LETTER_BULLET_RE.sub(r"\n\1- ", t)
+
+    # 4.1.2 ...
     t = AR_CHAIN_RE.sub(r"\n\1 ", t)
+
+    # 3.0 ...
     t = AR_SECTION_RE.sub(r"\n\1 ", t)
 
+    # ------------------------------------------------------------------
+    # 3) Cleanup
+    # ------------------------------------------------------------------
+    # compress excessive newlines
     t = re.sub(r"\n{3,}", "\n\n", t).strip()
     return t
 
 
 
+
+# def create_chunks_arabic(pdf_path: str) -> List[dict]:
+#     """
+#     Arabic-specific chunking using your production logic:
+#     - process_pdf_arabic (best extractor + reverse fix)
+#     - clean_text_generic
+#     - inject newlines for OCR numbered lists / bullets (fix "one long line")
+#     - split into paragraphs
+#     - keep only meaningful ones
+#     """
+#     text, is_arabic_pdf = process_pdf_arabic(pdf_path)
+#     if not text:
+#         return []
+
+#     text = clean_text_generic(text)
+#     text = inject_newlines_for_numbered_lists(text)
+
+# # ✅ If we now have list items, split by lines that start with "-<num>"
+#     if re.search(r"(?m)^\s*(?:-\d+|\.\d+|\d+[.)])\s+", text) or re.search(r"(?m)^\s*\.[٠-٩]+", text):
+#         paragraphs = [p.strip() for p in re.split(r"(?m)(?=^\s*(?:-\d+|\.\d+|\d+[.)])\s+|^\s*\.[٠-٩]+)", text) if p.strip()]
+#     else:
+#         paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+
+#     chunks: List[dict] = []
+#     for para in paragraphs:
+#         if is_meaningful_generic(para):
+#             chunks.append(
+#                 {
+#                     "chunk_id": f"Chunk_{len(chunks)+1:03d}",
+#                     "text": para,
+#                     "word_count": len(para.split()),
+#                     "is_arabic": is_arabic_pdf,
+#                 }
+#             )
+
+#     print(f"✅ Created {len(chunks)} meaningful Arabic chunks")
+#     return chunks
 def create_chunks_arabic(pdf_path: str) -> List[dict]:
     """
-    Arabic-specific chunking using your production logic:
+    Arabic-specific chunking:
     - process_pdf_arabic (best extractor + reverse fix)
     - clean_text_generic
-    - inject newlines for OCR numbered lists / bullets (fix "one long line")
-    - split into paragraphs
+    - inject newlines for OCR numbered lists / bullets / headings
+    - split into items using start-markers (English-like behavior)
     - keep only meaningful ones
     """
     text, is_arabic_pdf = process_pdf_arabic(pdf_path)
@@ -2479,14 +2607,27 @@ def create_chunks_arabic(pdf_path: str) -> List[dict]:
     text = clean_text_generic(text)
     text = inject_newlines_for_numbered_lists(text)
 
-# ✅ If we now have list items, split by lines that start with "-<num>"
-    if re.search(r"(?m)^\s*-\d+\s+", text):
-        paragraphs = [p.strip() for p in re.split(r"(?m)(?=^\s*-\d+\s+)", text) if p.strip()]
-    else:
-        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    # Split on ANY "item start" marker (lookahead keeps the marker with the item)
+    item_start_re = re.compile(
+        r"(?m)(?=^\s*(?:"
+        r"-\d{1,3}\s+"                              # -1
+        r"|[0-9]{1,3}[.)]\s+"                       # 1. or 1)
+        r"|\.\s*(?:[0-9]{1,3}|[٠-٩]{1,3})\s+"       # .1 or .١
+        r"|[أ-ي]\s*-\s+"                            # أ- ب-
+        r"|\d{1,2}\s+[\u0600-\u06FF]"               # 1 تعريفات / 2 تعريف...
+        r"|(?:\d+\.)+\d+\s+"                        # 4.1.2
+        r"|\d+\.0\s+"                               # 3.0
+        r"))"
+    )
+
+    parts = [p.strip() for p in item_start_re.split(text) if p and p.strip()]
+
+    # If split produced nothing useful (edge case), fall back to paragraph split
+    if not parts:
+        parts = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
 
     chunks: List[dict] = []
-    for para in paragraphs:
+    for para in parts:
         if is_meaningful_generic(para):
             chunks.append(
                 {
@@ -2499,7 +2640,6 @@ def create_chunks_arabic(pdf_path: str) -> List[dict]:
 
     print(f"✅ Created {len(chunks)} meaningful Arabic chunks")
     return chunks
-
 
 
 SYSTEM_PROMPT_AR = """
@@ -3345,4 +3485,5 @@ if __name__ == "__main__":
 
     #uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
     uvicorn.run("main:app", host="127.0.0.1", port=8000)
+
 
